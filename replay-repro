@@ -1,0 +1,175 @@
+#!/usr/bin/env ruby
+
+require 'optparse'
+
+# Dependencies
+#   * ruby
+#   * go (for building mongo-tools; preferably 1.8)
+#   * java (for building/running POCDriver)
+#   * maven (for building POCDriver)
+#   * libpcap (library and headers; for recording workload)
+#   * mongod (options; needed if running against local database)
+
+DEFAULT_MONGO_TOOLS_REPOSITORY = 'https://github.com/billybanfield/mongo-tools' 
+DEFAULT_MONGO_TOOLS_REVISION = 'master'
+DEFAULT_MONGOD_HOST = 'localhost'
+DEFAULT_MONGOD_PORT = '27017'
+DEFAULT_CONNECTION_COUNT = '10'
+DEFAULT_NETWORK_INTERFACE = 'eth0'
+DEFAULT_PPROFILE = false
+
+POC_DRIVER_REPOSITORY = 'https://github.com/johnlpage/POCDriver'
+SLEEP_TIME = 10
+
+# Parse options
+options = {}
+OptionParser.new do |opts|
+  opts.banner = 'Usage: replay-repro [options]'
+
+  options[:repository] = DEFAULT_MONGO_TOOLS_REPOSITORY
+  opts.on('-r', '--repository REPOSITORY',
+          'Specify the URL to the mongo-tools repository') do |repository|
+    options[:repository] = repository
+  end
+
+  options[:checkout] = DEFAULT_MONGO_TOOLS_REVISION
+  opts.on('-c', '--checkout CHECKOUT',
+          'Specify the revision to checkout before building') do |checkout|
+    options[:checkout] = checkout
+  end
+
+  options[:host] = DEFAULT_MONGOD_HOST
+  opts.on('-t', '--host HOST',
+          'Specify the host of the mongod to connect to') do |host|
+    options[:host] = host
+  end
+
+  options[:port] = DEFAULT_MONGOD_PORT
+  opts.on('-p', '--port PORT',
+          'Specify the port of the mongod to connect to') do |port|
+    options[:port] = port
+  end
+
+  options[:connections] = DEFAULT_CONNECTION_COUNT
+  opts.on('-n', '--connections CONNECTIONS',
+             'Specify the number of connections to use') do |connections| 
+    options[:connections] = connections
+  end
+
+  options[:interface] = DEFAULT_NETWORK_INTERFACE
+  opts.on('-i', '--interface INTERFACE',
+          'Specify the network interface to record data from') do |interface|
+    options[:interface] = interface
+  end
+
+  options[:prof] = DEFAULT_PPROFILE
+  opts.on('-p', '--proffile',
+          'Pass the `--proffile` flag to mongoreplay') do
+    options[:prof] = true
+  end
+end.parse!
+
+# Execute a shell command. If it fails, print error message and exit.
+def exec!(cmd, msg)
+  return if system(cmd)
+  $stderr.puts "error: #{msg}"
+  exit 1
+end
+
+# Clone a repository.
+def clone!(repo, name)
+  exec!("git clone #{repo}", "unable to clone #{name}")
+end
+
+# Run the POCDriver.
+def poc!(args, msg, background=false)
+  if background
+    exec!("nohup java -jar POCDriver/bin/POCDriver.jar #{args} &", msg)
+  else
+    exec!("java -jar POCDriver/bin/POCDriver.jar #{args}", msg)
+  end
+end
+
+# Build the mongo tools.
+def build_tools(options)
+  # Clone mongo-tools repo.
+  exec!('rm -rf mongo-tools', 'unable to remove existing mongo-tools repository')
+  clone!(options[:repository], "mongo-tools")
+
+  # Checkout specified revision and build the project.
+  Dir.chdir('mongo-tools') do
+    exec!("git checkout #{options[:checkout]}", 'unable to checkout specified revision')
+    exec!('./build.sh', 'unable to build mongo-tools')
+  end
+end
+
+# Build the POCDriver.
+def build_poc
+  # Clone POCDriver repo.
+  exec!('rm -rf POCDriver', 'unable to remove existing POCDriver repository')
+  clone!(POC_DRIVER_REPOSITORY, "POCDriver")
+
+  # Build POCDriver.
+  Dir.chdir('POCDriver') do
+    exec!('mvn clean package', 'unable to build POCDriver')
+  end
+end
+
+# Generate seed data with the POCDriver.
+def seed(options)
+  poc!("-i 100 -u 0 -k 0 -b 10 -t #{options[:connections]} -d 60 -j 5 "\
+       "--threadIdStart=0 -c mongodb://#{options[:host]}:#{options[:port]}/?maxPoolSize=10000 2>&1 "\
+       "| tee seed#{options[:connections]}.log",
+      'unable to generate seed data')
+end
+
+# Run workload with the POCDriver and record with mongoreplay.
+def record(options)
+  exec!("sudo rm -f traffic#{options[:connections]}.pcap", 'unable to remove existing pcap file')
+
+  # Run tcpdump in the background.
+  exec!("sudo tcpdump -B $((100*1024)) -i #{options[:interface]} -n 'port #{options[:port]}' -w traffic#{options[:connections]}.pcap &",
+        'unable to listen to traffic on network interface')
+
+  # Run query workload in background.
+  poc!("-i 0 -u 0 -k 100 -b 10 -t #{options[:connections]} -d 60 -j 5 "\
+       "--threadIdStart=0 -c mongodb://#{options[:host]}:#{options[:port]}/?maxPoolSize=10000 "\
+       "2>&1 >query#{options[:connections]}.log",
+       'unable to run query workload',
+       true
+      )
+
+  # Run update workload in foreground.
+  poc!("-i 0 -u 100 -k 0 -b 10 -t #{options[:connections]} -d 60 -j 5 "\
+       "--threadIdStart=0 -c mongodb://#{options[:host]}:#{options[:port]}/?maxPoolSize=10000 "\
+       "| tee update#{options[:connections]}.log",
+       'unable to run update workload',
+      )
+
+  # Allow extra time for POCDriver to finish.
+  sleep SLEEP_TIME
+
+  # Kill tcpdump and allow time to terminate.
+  exec!('sudo killall tcpdump', 'unable to terminate tcpdump')
+  sleep SLEEP_TIME
+
+  # Record workload with mongoreplay.
+  exec!("rm -f traffic#{options[:connections]}.playback", 'unable to remove existing playback file')
+  exec!("mongo-tools/bin/mongoreplay record -f traffic#{options[:connections]}.pcap -p traffic#{options[:connections]}.playback",
+        'unable to record workload with mongoreplay')
+end
+
+# Replay the workload.
+def replay(options)
+  cmd = "mongo-tools/bin/mongoreplay play -p traffic#{options[:connections]}.playback --host mongodb://#{options[:host]}:#{options[:port]} --no-preprocess"
+  cmd += " --proffile cpu#{options[:connections]}.prof" if options[:proffile]
+
+  exec!(cmd, 'unable to replay workload')
+end
+
+# Main routine
+build_tools(options)
+build_poc
+seed(options)
+record(options)
+replay(options)
