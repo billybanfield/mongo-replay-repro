@@ -2,4 +2,5 @@
 *.pcap
 *.playback
 POCDriver
-mongo-tools
+*-mongo-tools
+.seeded-*

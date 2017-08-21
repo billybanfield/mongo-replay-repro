@@ -10,14 +10,16 @@ require 'optparse'
 #   * libpcap (library and headers; for recording workload)
 #   * mongod (options; needed if running against local database)
 
+DEFAULT_CONNECTION_COUNT = '10'
+DEFAULT_FORCE = false
 DEFAULT_MONGO_TOOLS_REPOSITORY = 'https://github.com/billybanfield/mongo-tools' 
-DEFAULT_MONGO_TOOLS_REVISION = 'master'
+DEFAULT_MONGO_TOOLS_REVISION = 'TOOLS-1759-gobBSONLIBsockets'
 DEFAULT_MONGOD_HOST = 'localhost'
 DEFAULT_MONGOD_PORT = '27017'
-DEFAULT_CONNECTION_COUNT = '10'
 DEFAULT_NETWORK_INTERFACE = 'eth0'
 DEFAULT_PPROFILE = false
 
+DROP_DB = %("db.getSiblingDB('POCDB').dropDatabase()")
 POC_DRIVER_REPOSITORY = 'https://github.com/johnlpage/POCDriver'
 SLEEP_TIME = 10
 
@@ -67,6 +69,12 @@ OptionParser.new do |opts|
           'Pass the `--proffile` flag to mongoreplay') do
     options[:prof] = true
   end
+
+  options[:force] = DEFAULT_FORCE
+  opts.on('-f', '--force',
+          'Rebuild everything from scratch and regenerate workload even if the files already exist') do
+    options[:force] = true
+  end
 end.parse!
 
 # Execute a shell command. If it fails, print error message and exit.
@@ -78,7 +86,7 @@ end
 
 # Clone a repository.
 def clone!(repo, name)
-  exec!("git clone #{repo}", "unable to clone #{name}")
+  exec!("git clone #{repo} #{name}", "unable to clone #{name}")
 end
 
 # Run the POCDriver.
@@ -92,19 +100,39 @@ end
 
 # Build the mongo tools.
 def build_tools(options)
-  # Clone mongo-tools repo.
-  exec!('rm -rf mongo-tools', 'unable to remove existing mongo-tools repository')
-  clone!(options[:repository], "mongo-tools")
+  name ='mongo-tools'
+  tokens = options[:repository].split('/')
+  tools_index = tokens.index('mongo-tools')
+
+  if tools_index
+    user = tokens[tools_index - 1]
+    name = "#{user}-#{name}"
+  end
+
+  if options[:force] || !Dir.exists?(name)
+    # Clone mongo-tools repo.
+    exec!("rm -rf #{name}", 'unable to remove existing mongo-tools repository')
+    clone!(options[:repository], name)
+  end
 
   # Checkout specified revision and build the project.
-  Dir.chdir('mongo-tools') do
+  Dir.chdir(name) do
+    current_branch = `git branch`.split("\n").map(&:strip).find { |s| s.start_with?('* ')}[2..-1]
+    return [name, false] if current_branch == options[:checkout] && File.exists?('bin/mongoreplay')
+
+    exec!('git clean -fd', 'unable to cleanup repo')
+    exec!('git checkout HEAD .', 'unable to cleanup repo')
     exec!("git checkout #{options[:checkout]}", 'unable to checkout specified revision')
     exec!('./build.sh', 'unable to build mongo-tools')
   end
+
+  [name, true]
 end
 
 # Build the POCDriver.
-def build_poc
+def build_poc(options)
+  return if !options[:force] && File.exists?('POCDriver/bin/POCDriver.jar')
+
   # Clone POCDriver repo.
   exec!('rm -rf POCDriver', 'unable to remove existing POCDriver repository')
   clone!(POC_DRIVER_REPOSITORY, "POCDriver")
@@ -116,17 +144,24 @@ def build_poc
 end
 
 # Generate seed data with the POCDriver.
-def seed(options)
+def seed(rebuilt, options)
+  return if !options[:force] && !rebuilt && File.exists?(".seeded-#{options[:connections]}")
+
+  exec!("mongo --host #{options[:host]} --port #{options[:port]} --eval #{DROP_DB}", 'unable to clear old data from database')
+  exec!("rm -f .seeded-*", 'unable to clean up metadata files')
   poc!("-i 100 -u 0 -k 0 -b 10 -t #{options[:connections]} -d 60 -j 5 "\
        "--threadIdStart=0 -c mongodb://#{options[:host]}:#{options[:port]}/?maxPoolSize=10000 2>&1 "\
        "| tee seed#{options[:connections]}.log",
       'unable to generate seed data')
+
+  exec!("touch .seeded-#{options[:connections]}", 'unable to create metadata')
 end
 
-# Run workload with the POCDriver and record with mongoreplay.
-def record(options)
-  exec!("sudo rm -f traffic#{options[:connections]}.pcap", 'unable to remove existing pcap file')
+# Run workload with the POCDriver.
+def generate(rebuilt, name, options)
+  return if !options[:force] && !rebuilt && File.exists?("traffic#{options[:connections]}.pcap")
 
+  exec!("sudo rm -f traffic#{options[:connections]}.pcap", 'unable to remove existing pcap file')
   # Run tcpdump in the background.
   exec!("sudo tcpdump -B $((100*1024)) -i #{options[:interface]} -n 'port #{options[:port]}' -w traffic#{options[:connections]}.pcap &",
         'unable to listen to traffic on network interface')
@@ -145,31 +180,39 @@ def record(options)
        "| tee update#{options[:connections]}.log",
        'unable to run update workload',
       )
-
   # Allow extra time for POCDriver to finish.
   sleep SLEEP_TIME
 
   # Kill tcpdump and allow time to terminate.
   exec!('sudo killall tcpdump', 'unable to terminate tcpdump')
   sleep SLEEP_TIME
+end
+
+# Record workload with mongoreplay.
+def record(rebuilt, name, options)
+  return if !options[:force] && !rebuilt && File.exists?("traffic#{options[:connections]}.playback")
 
   # Record workload with mongoreplay.
   exec!("rm -f traffic#{options[:connections]}.playback", 'unable to remove existing playback file')
-  exec!("mongo-tools/bin/mongoreplay record -f traffic#{options[:connections]}.pcap -p traffic#{options[:connections]}.playback",
+  exec!("#{name}/bin/mongoreplay record -f traffic#{options[:connections]}.pcap -p traffic#{options[:connections]}.playback",
         'unable to record workload with mongoreplay')
 end
 
 # Replay the workload.
-def replay(options)
-  cmd = "mongo-tools/bin/mongoreplay play -p traffic#{options[:connections]}.playback --host mongodb://#{options[:host]}:#{options[:port]} --no-preprocess"
+def replay(name, options)
+  fullspeed = if `#{name}/bin/mongoreplay play --help`
+              end
+
+  cmd = "#{name}/bin/mongoreplay play -p traffic#{options[:connections]}.playback --host mongodb://#{options[:host]}:#{options[:port]} --no-preprocess"
   cmd += " --proffile cpu#{options[:connections]}.prof" if options[:proffile]
 
-  exec!(cmd, 'unable to replay workload')
+  exec!("#{cmd} --fullSpeed || #{cmd}", 'unable to replay workload')
 end
 
 # Main routine
-build_tools(options)
-build_poc
-seed(options)
-record(options)
-replay(options)
+name, rebuilt = build_tools(options)
+build_poc(options)
+seed(rebuilt, options)
+generate(rebuilt, name, options)
+record(rebuilt, name, options)
+replay(name, options)
