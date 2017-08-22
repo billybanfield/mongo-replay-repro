@@ -1,5 +1,6 @@
 #!/usr/bin/env ruby
 
+require 'benchmark'
 require 'optparse'
 
 # Dependencies
@@ -78,8 +79,13 @@ OptionParser.new do |opts|
 end.parse!
 
 # Execute a shell command. If it fails, print error message and exit.
-def exec!(cmd, msg)
-  return if system(cmd)
+def exec!(cmd, msg, measure = false)
+  time = Time.now
+  ok = system(cmd)
+  time = Time.now - time
+
+  return time if ok
+
   $stderr.puts "error: #{msg}"
   exit 1
 end
@@ -200,13 +206,9 @@ end
 
 # Replay the workload.
 def replay(connections, name, options)
-  fullspeed = if `#{name}/bin/mongoreplay play --help`
-              end
-
   cmd = "#{name}/bin/mongoreplay play -p traffic-#{connections}.playback --host mongodb://#{options[:host]}:#{options[:port]} --no-preprocess"
   cmd += " --proffile cpu-#{connections}.prof" if options[:proffile]
-
-  exec!("#{cmd} --fullSpeed || #{cmd}", 'unable to replay workload')
+  exec!("#{cmd} --fullSpeed || #{cmd}", 'unable to replay workload', true)
 end
 
 puts '### Building tools ###'
@@ -224,5 +226,6 @@ options[:connections].each do |n|
   puts "### Recording workload ###"
   record(n, rebuilt, name, options)
   puts "### Replaying workload ###"
-  replay(n, name, options)
+  time = replay(n, name, options)
+  puts "=== running time: #{time} ==="
 end
