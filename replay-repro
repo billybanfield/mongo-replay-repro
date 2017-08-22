@@ -217,6 +217,8 @@ name, rebuilt = build_tools(options)
 puts "### Building POC driver ###"
 build_poc(options)
 
+results = {}
+
 options[:connections].each do |n| 
   puts "### Running with #{n} connections ###"
   puts "### Seeding database ###"
@@ -226,6 +228,12 @@ options[:connections].each do |n|
   puts "### Recording workload ###"
   record(n, rebuilt, name, options)
   puts "### Replaying workload ###"
-  time = replay(n, name, options)
-  puts "=== running time: #{time} ==="
+  results[n] = replay(n, name, options)
+  puts "=== running time (#{n} connections): #{results[n]} ==="
+  exec!("rm -f traffic-#{n}.pcap", 'unable to delete unneeded pcap file')
+end
+
+puts "final results: "
+results.each do |n, t|
+  puts "#{n} connections: #{t}"
 end
