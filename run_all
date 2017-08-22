@@ -1,0 +1,4 @@
+#!/bin/sh
+
+./replay-repro -i lo -c TOOLS-1759-hybrid-fullspeed -n 10,100,500,1000,10000 | tee will_hybrid-fullspeed.log
+./replay-repro -i lo -c TOOLS-1759-gobBSONLIBsockets -n 10,100,500,1000,10000 | tee will_gob-bsonlib-sockets.log
