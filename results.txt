@@ -1,7 +1,17 @@
 remote        | branch                      | # conns | actual time | replay time
 -----------------------------------------------------------------------------------
-billybanfield | TOOLS-1759-hybrid-fullspeed |      10 |          60 | 71.465464785 
+billybanfield | TOOLS-1759-hybrid-fullspeed |      10 |          60 |  71.465464785 
+billybanfield | TOOLS-1759-hybrid-fullspeed |      10 |          60 |  71.498270091
+billybanfield | TOOLS-1759-hybrid-fullspeed |      10 |          60 |  70.809744283
 billybanfield | TOOLS-1759-hybrid-fullspeed |     100 |          60 | 203.644082092
+billybanfield | TOOLS-1759-hybrid-fullspeed |     100 |          60 | 215.279182419
+billybanfield | TOOLS-1759-hybrid-fullspeed |     100 |          60 | 209.172438476
 billybanfield | TOOLS-1759-hybrid-fullspeed |     500 |          60 | 202.647550584
+billybanfield | TOOLS-1759-hybrid-fullspeed |     500 |          60 | 192.927967148
+billybanfield | TOOLS-1759-hybrid-fullspeed |     500 |          60 | 192.587316748
 billybanfield | TOOLS-1759-hybrid-fullspeed |    1000 |          60 | 131.647006851
+billybanfield | TOOLS-1759-hybrid-fullspeed |    1000 |          60 | 164.965968203
+billybanfield | TOOLS-1759-hybrid-fullspeed |    1000 |          60 | 168.313849133
+billybanfield | TOOLS-1759-hybrid-fullspeed |    2500 |          60 |  90.477310051
 billybanfield | TOOLS-1759-hybrid-fullspeed |   10000 |          60 | 128.394164543
+
