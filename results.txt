@@ -37,3 +37,12 @@ billybanfield | TOOLS-1759-gobBSONLIBsockets |     500 |          60 | 215.26286
 billybanfield | TOOLS-1759-gobBSONLIBsockets |    1000 |          60 | 179.903219627
 billybanfield | TOOLS-1759-gobBSONLIBsockets |    1000 |          60 | 185.976856198
 billybanfield | TOOLS-1759-gobBSONLIBsockets |    1000 |          60 | 183.387800440
+billybanfield | TOOLS-1759-gobBSONLIBsockets |    2500 |          60 | 122.531357726
+billybanfield | TOOLS-1759-gobBSONLIBsockets |    2500 |          60 | 122.194434708
+billybanfield | TOOLS-1759-gobBSONLIBsockets |    2500 |          60 | 121.502173107
+billybanfield | TOOLS-1759-gobBSONLIBsockets |    5000 |          60 | 134.424313111
+billybanfield | TOOLS-1759-gobBSONLIBsockets |    5000 |          60 | 131.386638212
+billybanfield | TOOLS-1759-gobBSONLIBsockets |    5000 |          60 | 130.305978576
+billybanfield | TOOLS-1759-gobBSONLIBsockets |   10000 |          60 | 135.436166596
+billybanfield | TOOLS-1759-gobBSONLIBsockets |   10000 |          60 | 138.201666894
+billybanfield | TOOLS-1759-gobBSONLIBsockets |   10000 |          60 | 138.281958000
