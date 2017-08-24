@@ -46,3 +46,12 @@ billybanfield | TOOLS-1759-gobBSONLIBsockets |    5000 |          60 | 130.30597
 billybanfield | TOOLS-1759-gobBSONLIBsockets |   10000 |          60 | 135.436166596
 billybanfield | TOOLS-1759-gobBSONLIBsockets |   10000 |          60 | 138.201666894
 billybanfield | TOOLS-1759-gobBSONLIBsockets |   10000 |          60 | 138.281958000
+mongodb       | master                       |      10 |          60 | 136.164067216
+mongodb       | master                       |      10 |          60 | 133.967356449
+mongodb       | master                       |      10 |          60 | 137.589230887
+mongodb       | master                       |     100 |          60 | 433.460275413
+mongodb       | master                       |     100 |          60 | 435.813373712
+mongodb       | master                       |     100 |          60 | 429.745448440
+mongodb       | master                       |     500 |          60 | 393.281010660
+mongodb       | master                       |     500 |          60 | 394.301308851
+mongodb       | master                       |     500 |          60 | 395.706718586
