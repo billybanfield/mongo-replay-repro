@@ -19,7 +19,12 @@ billybanfield | TOOLS-1759-hybrid-fullspeed  |    2000 |          60 | 119.49882
 billybanfield | TOOLS-1759-hybrid-fullspeed  |    2500 |          60 |  90.477310051
 billybanfield | TOOLS-1759-hybrid-fullspeed  |    2500 |          60 |  98.178663190
 billybanfield | TOOLS-1759-hybrid-fullspeed  |    2500 |          60 |  93.398259175
+billybanfield | TOOLS-1759-hybrid-fullspeed  |    5000 |          60 |  88.176410218
+billybanfield | TOOLS-1759-hybrid-fullspeed  |    5000 |          60 | 101.640135549
+billybanfield | TOOLS-1759-hybrid-fullspeed  |    5000 |          60 | 104.557301675
 billybanfield | TOOLS-1759-hybrid-fullspeed  |   10000 |          60 | 128.394164543
+billybanfield | TOOLS-1759-hybrid-fullspeed  |   10000 |          60 |  90.275932944
+billybanfield | TOOLS-1759-hybrid-fullspeed  |   10000 |          60 |  92.028200299
 billybanfield | TOOLS-1759-gobBSONLIBsockets |      10 |          60 |  76.527033985
 billybanfield | TOOLS-1759-gobBSONLIBsockets |      10 |          60 |  77.870643771
 billybanfield | TOOLS-1759-gobBSONLIBsockets |      10 |          60 |  80.356384119
