@@ -22,7 +22,7 @@ DEFAULT_PPROFILE = false
 
 DROP_DB = %("db.getSiblingDB('POCDB').dropDatabase()")
 POC_DRIVER_REPOSITORY = 'https://github.com/johnlpage/POCDriver'
-SLEEP_TIME = 10
+SLEEP_TIME = 20
 
 # Parse options
 options = {}
@@ -187,7 +187,7 @@ def generate(connections, rebuilt, name, options)
        'unable to run update workload',
       )
   # Allow extra time for POCDriver to finish.
-  sleep SLEEP_TIME
+  sleep 5
 
   # Kill tcpdump and allow time to terminate.
   exec!('sudo killall tcpdump', 'unable to terminate tcpdump')
