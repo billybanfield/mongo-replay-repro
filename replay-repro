@@ -117,9 +117,9 @@ end
 
 # Replay the workload.
 def replay(dirname, file, config, options)
-  cmd = "#{dirname}/bin/mongoreplay play -p /#{options[:dir]}/gob/#{file} #{config['flags']} --host mongodb://#{options[:host]}:#{options[:port]} | tee /#{options[:dir]}/results/#{config['name']}.log"
-  cmd += " --proffile /#{options[:dir]}/results/cpu-#{config['name']}.prof" if config['proffile']
-  exec!("#{cmd} --fullSpeed || #{cmd}", 'unable to replay workload', true)
+  cmd = "#{dirname}/bin/mongoreplay play -p /#{options[:dir]}/gob/#{file} #{config['flags']} --host mongodb://#{options[:host]}:#{options[:port]} | tee /#{options[:dir]}/results/#{config['name']}-#{file}.log"
+  cmd += " --proffile /#{options[:dir]}/results/cpu-#{config['name']}-#{file}.prof" if config['proffile']
+  exec!("#{cmd}", 'unable to replay workload', true)
 end
 
 puts '### Building tools ###'
@@ -136,6 +136,9 @@ configuration['config'].each do |config|
     puts "=== doing run with #{config} on file #{fname} ==="
     results << [config['name'], replay(dirname, fname, config, options)]
     puts "=== running time (#{results.last.first} connections): #{results.last.last} ==="
+    File.open("#{fname}-#{config['name']}", 'w') do |resultFile|
+      resultFile.puts("=== running time (#{results.last.first} connections): #{results.last.last} ===")
+    end
   end
 end
 
