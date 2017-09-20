@@ -19,7 +19,7 @@ DEFAULT_MONGO_TOOLS_REVISION = 'SUPPORT-2405'
 DEFAULT_MONGOD_HOST = 'localhost'
 DEFAULT_MONGOD_PORT = '27017'
 DEFAULT_PPROFILE = false
-DEFAULT_DIR = '/replay'
+DEFAULT_DIR = 'replay'
 
 DROP_DB = %("db.getSiblingDB('POCDB').dropDatabase()")
 SLEEP_TIME = 20
@@ -133,6 +133,7 @@ configuration = JSON.parse(file)
 results = []
 configuration['config'].each do |config|
   configuration['files'].each do |fname|
+    puts "=== doing run with #{config} on file #{fname} ==="
     results << [config['name'], replay(dirname, fname, config, options)]
     puts "=== running time (#{results.last.first} connections): #{results.last.last} ==="
   end
