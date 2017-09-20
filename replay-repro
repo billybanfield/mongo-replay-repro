@@ -117,8 +117,8 @@ end
 
 # Replay the workload.
 def replay(dirname, file, config, options)
-  cmd = "#{dirname}/bin/mongoreplay play -p /#{options['dir']}/gob/#{file} #{config['flags']} --host mongodb://#{options[:host]}:#{options[:port]} | tee /#{options['dir']}/results/#{config['name']}.log"
-  cmd += " --proffile /#{options['dir']}/results/cpu-#{config['name']}.prof" if config['proffile']
+  cmd = "#{dirname}/bin/mongoreplay play -p /#{options[:dir]}/gob/#{file} #{config['flags']} --host mongodb://#{options[:host]}:#{options[:port]} | tee /#{options[:dir]}/results/#{config['name']}.log"
+  cmd += " --proffile /#{options[:dir]}/results/cpu-#{config['name']}.prof" if config['proffile']
   exec!("#{cmd} --fullSpeed || #{cmd}", 'unable to replay workload', true)
 end
 
