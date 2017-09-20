@@ -133,6 +133,8 @@ configuration = JSON.parse(file)
 results = []
 configuration['config'].each do |config|
   configuration['files'].each do |fname|
+    # drop the database
+  exec!("mongo --host #{options[:host]} --port #{options[:port]} --eval #{DROP_DB}", 'unable to clear old data from database')
     puts "=== doing run with #{config} on file #{fname} ==="
     results << [config['name'], replay(dirname, fname, config, options)]
     puts "=== running time (#{results.last.first} connections): #{results.last.last} ==="
