@@ -2,6 +2,7 @@
 
 require 'benchmark'
 require 'optparse'
+require 'json'
 
 # Dependencies
 #   * ruby
@@ -11,17 +12,16 @@ require 'optparse'
 #   * libpcap (library and headers; for recording workload)
 #   * mongod (options; needed if running against local database)
 
-DEFAULT_CONNECTION_COUNT = %w(10)
 DEFAULT_FORCE = false
+DEFAULT_CONFIG = "replay_config.json"
 DEFAULT_MONGO_TOOLS_REPOSITORY = 'https://github.com/billybanfield/mongo-tools' 
-DEFAULT_MONGO_TOOLS_REVISION = 'TOOLS-1759-gobBSONLIBsockets'
+DEFAULT_MONGO_TOOLS_REVISION = 'SUPPORT-2405'
 DEFAULT_MONGOD_HOST = 'localhost'
 DEFAULT_MONGOD_PORT = '27017'
-DEFAULT_NETWORK_INTERFACE = 'eth0'
 DEFAULT_PPROFILE = false
+DEFAULT_DIR = '/replay'
 
 DROP_DB = %("db.getSiblingDB('POCDB').dropDatabase()")
-POC_DRIVER_REPOSITORY = 'https://github.com/johnlpage/POCDriver'
 SLEEP_TIME = 20
 
 # Parse options
@@ -53,29 +53,18 @@ OptionParser.new do |opts|
     options[:port] = port
   end
 
-  options[:connections] = DEFAULT_CONNECTION_COUNT
-  opts.on('-n', '--connections CONNECTIONS',
-             'Specify the number of connections to use') do |connections| 
-    options[:connections] = connections.split(',')
+  options[:config] = DEFAULT_CONFIG
+  opts.on('-c', '--config',
+          'Specify the config file for runs of this script') do |config|
+    options[:config] = config 
   end
 
-  options[:interface] = DEFAULT_NETWORK_INTERFACE
-  opts.on('-i', '--interface INTERFACE',
-          'Specify the network interface to record data from') do |interface|
-    options[:interface] = interface
+  options[:dir] = DEFAULT_DIR
+  opts.on('-d', '--dir',
+          'Specify the directory output for runs of this script') do |dir|
+    options[:dir] = dir 
   end
 
-  options[:prof] = DEFAULT_PPROFILE
-  opts.on('-p', '--proffile',
-          'Pass the `--proffile` flag to mongoreplay') do
-    options[:prof] = true
-  end
-
-  options[:force] = DEFAULT_FORCE
-  opts.on('-f', '--force',
-          'Rebuild everything from scratch and regenerate workload even if the files already exist') do
-    options[:force] = true
-  end
 end.parse!
 
 # Execute a shell command. If it fails, print error message and exit.
@@ -93,15 +82,6 @@ end
 # Clone a repository.
 def clone!(repo, name)
   exec!("git clone #{repo} #{name}", "unable to clone #{name}")
-end
-
-# Run the POCDriver.
-def poc!(args, msg, background=false)
-  if background
-    exec!("nohup java -jar POCDriver/bin/POCDriver.jar #{args} &", msg)
-  else
-    exec!("java -jar POCDriver/bin/POCDriver.jar #{args}", msg)
-  end
 end
 
 # Build the mongo tools.
@@ -135,103 +115,29 @@ def build_tools(options)
   [name, true]
 end
 
-# Build the POCDriver.
-def build_poc(options)
-  return if !options[:force] && File.exists?('POCDriver/bin/POCDriver.jar')
-
-  # Clone POCDriver repo.
-  exec!('rm -rf POCDriver', 'unable to remove existing POCDriver repository')
-  clone!(POC_DRIVER_REPOSITORY, "POCDriver")
-
-  # Build POCDriver.
-  Dir.chdir('POCDriver') do
-    exec!('mvn clean package', 'unable to build POCDriver')
-  end
-end
-
-# Generate seed data with the POCDriver.
-def seed(connections, rebuilt, options)
-  return if !options[:force] && !rebuilt && File.exists?(".seeded-#{connections}")
-
-  exec!("mongo --host #{options[:host]} --port #{options[:port]} --eval #{DROP_DB}", 'unable to clear old data from database')
-  exec!("rm -f .seeded-*", 'unable to clean up metadata files')
-  poc!("-i 100 -u 0 -k 0 -b 10 -t #{connections} -d 60 -j 5 "\
-       "--threadIdStart=0 -c mongodb://#{options[:host]}:#{options[:port]}/?maxPoolSize=10000 2>&1 "\
-       "| tee seed-#{connections}.log",
-      'unable to generate seed data')
-
-  exec!("touch .seeded-#{connections}", 'unable to create metadata')
-end
-
-# Run workload with the POCDriver.
-def generate(connections, rebuilt, name, options)
-  return if !options[:force] && !rebuilt && File.exists?("traffic-#{connections}.pcap")
-
-  exec!("sudo rm -f traffic-#{connections}.pcap", 'unable to remove existing pcap file')
-  # Run tcpdump in the background.
-  exec!("sudo tcpdump -B $((100*1024)) -i #{options[:interface]} -n 'port #{options[:port]}' -w traffic-#{connections}.pcap &",
-        'unable to listen to traffic on network interface')
-
-  # Run query workload in background.
-  poc!("-i 0 -u 0 -k 100 -b 10 -t #{connections} -d 60 -j 5 "\
-       "--threadIdStart=0 -c mongodb://#{options[:host]}:#{options[:port]}/?maxPoolSize=10000 "\
-       "2>&1 >query-#{connections}.log",
-       'unable to run query workload',
-       true
-      )
-
-  # Run update workload in foreground.
-  poc!("-i 0 -u 100 -k 0 -b 10 -t #{connections} -d 60 -j 5 "\
-       "--threadIdStart=0 -c mongodb://#{options[:host]}:#{options[:port]}/?maxPoolSize=10000 "\
-       "| tee update-#{connections}.log",
-       'unable to run update workload',
-      )
-  # Allow extra time for POCDriver to finish.
-  sleep 5
-
-  # Kill tcpdump and allow time to terminate.
-  exec!('sudo killall tcpdump', 'unable to terminate tcpdump')
-  sleep SLEEP_TIME
-end
-
-# Record workload with mongoreplay.
-def record(connections, rebuilt, name, options)
-  return if !options[:force] && !rebuilt && File.exists?("traffic-#{connections}.playback")
-
-  # Record workload with mongoreplay.
-  exec!("rm -f traffic-#{connections}.playback", 'unable to remove existing playback file')
-  exec!("#{name}/bin/mongoreplay record -f traffic-#{connections}.pcap -p traffic-#{connections}.playback",
-        'unable to record workload with mongoreplay')
-end
-
 # Replay the workload.
-def replay(connections, name, options)
-  cmd = "#{name}/bin/mongoreplay play -p traffic-#{connections}.playback --host mongodb://#{options[:host]}:#{options[:port]} --no-preprocess"
-  cmd += " --proffile cpu-#{connections}.prof" if options[:proffile]
+def replay(dirname, file, config, options)
+  cmd = "#{dirname}/bin/mongoreplay play -p #{options}/gob/#{file} #{config['flags']} --host mongodb://#{options[:host]}:#{options[:port]} --no-preprocess"
+  cmd += " --proffile cpu-#{config['name']}.prof" if config['proffile']
   exec!("#{cmd} --fullSpeed || #{cmd}", 'unable to replay workload', true)
 end
 
 puts '### Building tools ###'
-name, rebuilt = build_tools(options)
+dirname, rebuilt = build_tools(options)
 
-puts "### Building POC driver ###"
-build_poc(options)
+
+# Parse the config file
+file = File.read(options[:config])
+configuration = JSON.parse(file)
 
 results = []
-
-options[:connections].each do |n| 
-  puts "### Running with #{n} connections ###"
-  puts "### Seeding database ###"
-  seed(n, rebuilt, options)
-  puts "### Running workload ###"
-  generate(n, rebuilt, name, options)
-  puts "### Recording workload ###"
-  record(n, rebuilt, name, options)
-  puts "### Replaying workload ###"
-  results << [n, replay(n, name, options)]
-  puts "=== running time (#{results.last.first} connections): #{results.last.last} ==="
-  exec!("rm -f traffic-#{n}.pcap", 'unable to delete unneeded pcap file')
+configuration['config'].each do |config|
+  configuration['files'].each do |fname|
+    results << [config['name'], replay(dirname, fname, config, options)]
+    puts "=== running time (#{results.last.first} connections): #{results.last.last} ==="
+  end
 end
+
 
 puts "final results: "
 results.each do |pair|
