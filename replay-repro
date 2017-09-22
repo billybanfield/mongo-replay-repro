@@ -3,6 +3,7 @@
 require 'benchmark'
 require 'optparse'
 require 'json'
+require "fileutils"
 
 # Dependencies
 #   * ruby
@@ -11,6 +12,8 @@ require 'json'
 #   * maven (for building POCDriver)
 #   * libpcap (library and headers; for recording workload)
 #   * mongod (options; needed if running against local database)
+#   * go-torch (for generating flame graphs)
+#   * FlameGraph (dependency of go-troch)
 
 DEFAULT_FORCE = false
 DEFAULT_CONFIG = "replay_config.json"
@@ -117,35 +120,61 @@ end
 
 # Replay the workload.
 def replay(dirname, file, config, options)
-  cmd = "#{dirname}/bin/mongoreplay play -p /#{options[:dir]}/gob/#{file} #{config['flags']} --host mongodb://#{options[:host]}:#{options[:port]} | tee /#{options[:dir]}/results/#{config['name']}-#{file}.log"
-  cmd += " --proffile=/#{options[:dir]}/results/cpu-#{config['name']}-#{file}.prof" if config['proffile']
-  exec!("#{cmd}", 'unable to replay workload', true)
+  cmd = "#{dirname}/bin/mongoreplay play -p /#{options[:dir]}/gob/#{file} #{config['flags']} --host mongodb://#{options[:host]}:#{options[:port]} "
+  run_name =  "#{config['name']}-#{file}" 
+  cmd += " --proffile=/#{options[:dir]}/results/pprof/cpu-#{run_name}.pprof" if config['proffile']
+  cmd += " 2>&1 | tee /#{options[:dir]}/results/#{config['name']}-#{file}.log"
+
+  exec_time = exec!(cmd, 'unable to replay workload', true)
+  {exec_time: exec_time, run_name: run_name}
 end
 
+# Run a single test case
+def do_case(dirname, fname, config, options)
+  exec!("mongo --host #{options[:host]} --port #{options[:port]} --eval #{DROP_DB}", 'unable to clear old data from database')
+  puts "=== doing run with #{config} on file #{fname} ==="
+  replay_result = replay(dirname, fname, config, options)
+  puts "=== running time (#{replay_result[:run_name]} connections): #{replay_result[:exec_time]} ==="
+
+  File.open("#{replay_result[:run_name]}-#{config['name']}.result", 'w') do |resultFile|
+    resultFile.puts("=== running time (#{replay_result[:run_name]} connections): #{replay_result[:exec_time]} ===")
+   end
+   replay_result
+end
+
+#perform all desired post processing steps
+def postprocess(options, run_name)
+  cmd = "go-torch -b /#{options[:dir]}/results/pprof/cpu-#{run_name}.pprof -f /#{options[:dir]}/results/graphs/cpu-#{run_name}.svg"
+  exec!(cmd, "failed to generate flamegraph")
+end
 puts '### Building tools ###'
 dirname, rebuilt = build_tools(options)
-
 
 # Parse the config file
 file = File.read(options[:config])
 configuration = JSON.parse(file)
 
-results = []
+
+#create directories for execution
+resultsdir = "/#{options[:dir]}/results/"
+logdir = "/#{options[:dir]}/results/log"
+pprofdir = "/#{options[:dir]}/results/pprof"
+graphsdir = "/#{options[:dir]}/results/graphs"
+
+FileUtils.mkdir_p(resultsdir)
+FileUtils.mkdir_p(logdir)
+FileUtils.mkdir_p(pprofdir)
+FileUtils.mkdir_p(graphsdir)
+all_results = []
 configuration['config'].each do |config|
   configuration['files'].each do |fname|
-    # drop the database
-  exec!("mongo --host #{options[:host]} --port #{options[:port]} --eval #{DROP_DB}", 'unable to clear old data from database')
-    puts "=== doing run with #{config} on file #{fname} ==="
-    results << [config['name'], replay(dirname, fname, config, options)]
-    puts "=== running time (#{results.last.first} connections): #{results.last.last} ==="
-    File.open("#{fname}-#{config['name']}", 'w') do |resultFile|
-      resultFile.puts("=== running time (#{results.last.first} connections): #{results.last.last} ===")
-    end
+    case_results = do_case(dirname, fname, config, options)
+    all_results << case_results
+    postprocess(options,  case_results[:run_name])
   end
 end
 
-
 puts "final results: "
-results.each do |pair|
-  puts "#{pair.first} connections: #{pair.last}"
+all_results.each do |result|
+  puts "#{result[:name]}: #{result[:exec_time]}"
 end
